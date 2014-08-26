@@ -33,7 +33,13 @@ app.get('/', routes.index);
 app.get('/users', user.list);
 
 io.on('connection', function(socket) {
-	console.log('socket ocnnected');
+  socket.on('chat message', function(msg){
+    console.log('A user sent: ' + msg);
+  });
+	console.log('User connected');
+	socket.on('disconnect', function(){
+    console.log('user disconnected');
+  });  
 });
 
 http.listen(app.get('port'), function(){
