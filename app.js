@@ -29,6 +29,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 // development only
 if ('development' == app.get('env')) {
   app.use(express.errorHandler());
+} else {
+	// Heroku won't actually allow us to use WebSockets
+	// so we have to setup polling instead.
+	// https://devcenter.heroku.com/articles/using-socket-io-with-node-js-on-heroku
+	io.configure(function () {
+	  io.set("transports", ["xhr-polling"]);
+	  io.set("polling duration", 10);
+	});
 }
 
 app.get('/', routes.index);
