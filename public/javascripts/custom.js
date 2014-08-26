@@ -1,4 +1,6 @@
 var socket = io();
+var clientID = null;
+
 $(function(){
 	$('#send').click(function(){
 		sendMessage();
@@ -18,4 +20,13 @@ $(function(){
 
 socket.on('chat message', function(msg){
 	$('#messages').append($('<li>').text(msg));
+});
+
+socket.on('connect', function(){
+	socket.emit('connected');
+});
+
+socket.on('assign username', function(name){
+	clientID = name;
+	$('#username').text(name);
 });

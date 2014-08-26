@@ -3,6 +3,7 @@ extends layout
 block content
   h1= Chat
   p Welcome to #{title}
+  p#username
   ul#messages
   form(id='chatbox')
     input(type='text', id='chatmessage', autocomplete='off')
