@@ -12,18 +12,17 @@ $(function(){
 
 	function sendMessage(){	
 		event.preventDefault();	
-		socket.emit('chat message', $('#chatmessage').val());
+		var msg = $('#chatmessage').val();
+		socket.emit('chat message', msg);
 		$('#chatmessage').val('');
+		$('#messages').append($('<li>').text('Me: ' + msg));
 		return false;
 	};
 });
 
 socket.on('chat message', function(msgObject){
 	var msg = JSON.parse(msgObject);
-	if(clientID == msg.username)
-		$('#messages').append($('<li>').text('Me: ' + msg.message));
-	else
-		$('#messages').append($('<li>').text(msg.username + ': ' + msg.message));
+	$('#messages').append($('<li>').text(msg.username + ': ' + msg.message));
 });
 
 socket.on('notification', function(msg){
@@ -37,5 +36,5 @@ socket.on('connect', function(){
 
 socket.on('assign username', function(name){
 	clientID = name;
-	$('#username').text(name);
+	$('#username').text('My username is ' + name);
 });

@@ -48,7 +48,7 @@ io.on('connection', function(socket) {
 	socket.on('chat message', function(msg){
 		var msgObject = {'username': usernames[socket.id],
 						 'message': msg};
-		io.emit('chat message', JSON.stringify(msgObject));
+		socket.broadcast.emit('chat message', JSON.stringify(msgObject));
 	});
 
 	// disconnection
@@ -58,7 +58,7 @@ io.on('connection', function(socket) {
 	});
 
 	socket.on('connected', function(){
-		var newName = chance.first();
+		var newName = chance.first() + chance.integer({min:1,max:1000});
 		usernames[socket.id] = newName;
 		socket.emit('assign username', newName);
 		socket.broadcast.emit('notification', newName + ' has connected');
