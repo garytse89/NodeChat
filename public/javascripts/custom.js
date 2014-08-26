@@ -27,7 +27,7 @@ $(function(){
 		$('#chatmessage').val('');
 		$('#messages').append($('<li>').text('Me: ' + msg));
 		return false;
-	};
+	};	
 });
 
 socket.on('chat message', function(msgObject){
@@ -66,7 +66,14 @@ socket.on('user list update', function(userlist) {
 	$('#onlineUsers').empty();
 	for( user_id in userlist ) {
 		console.log(clientID);
-		if(userlist[user_id] != clientID)
-			$('#onlineUsers').append($('<li>').text(userlist[user_id]));
+		if(userlist[user_id] != clientID){
+			$('#onlineUsers').append($('<li class=\'private\'>').text(userlist[user_id]));
+		}
 	}
-})
+
+	// bind listener, can't do it when DOM loads (because this list wouldn't have been populated)
+	$('.private').click(function(){
+		console.log("initiate pm");
+		$('#pmTitle').text('PM-ing ' + $(this).text());
+	});
+});
