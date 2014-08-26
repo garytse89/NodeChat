@@ -10,10 +10,20 @@ $(function(){
 		sendMessage();
 	});
 
+	$('#chatmessage').on('input', function() {
+		// detected when user is typing
+		var contents = $('#chatmessage').val();
+		if(contents.length > 0)
+			socket.emit('typing');
+		else
+			socket.emit('stopped typing');
+	});
+
 	function sendMessage(){	
 		event.preventDefault();	
 		var msg = $('#chatmessage').val();
 		socket.emit('chat message', msg);
+		socket.emit('stopped typing');
 		$('#chatmessage').val('');
 		$('#messages').append($('<li>').text('Me: ' + msg));
 		return false;
@@ -34,7 +44,14 @@ socket.on('connect', function(){
 	socket.emit('connected');
 });
 
-socket.on('assign username', function(name){
-	clientID = name;
-	$('#username').text('My username is ' + name);
+socket.on('started typing', function(username){
+	var typingID = '#' + username;
+	if($(typingID).length == 0)
+		$('#messages').append($('<li id = "' + username + '">').text(username + ' is typing...'));
+});
+
+socket.on('stopped typing', function(username){
+	var typingID = '#' + username;
+	if($(typingID).length > 0)
+		$(typingID).remove();
 });

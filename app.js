@@ -63,6 +63,14 @@ io.on('connection', function(socket) {
 		socket.emit('assign username', newName);
 		socket.broadcast.emit('notification', newName + ' has connected');
 	});
+
+	socket.on('typing', function() {
+		socket.broadcast.emit('started typing', usernames[socket.id]);
+	});
+
+	socket.on('stopped typing', function(){
+		socket.broadcast.emit('stopped typing', usernames[socket.id]);
+	});
 });
 
 http.listen(app.get('port'), function(){
