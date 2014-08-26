@@ -1,0 +1,12 @@
+extends layout
+
+block content
+  h1= Chat
+  p Welcome to #{title}
+  ul#messages
+  form(action='/login', method='post')
+    input(id='m', autocomplete='off')
+    button
+      Send
+  script.
+    var socket = io();

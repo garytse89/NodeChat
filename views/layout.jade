@@ -1,0 +1,10 @@
+doctype html
+html
+  head
+    title= title
+    link(rel='stylesheet', href='/stylesheets/style.css')
+    script(src='https://cdn.socket.io/socket.io-1.0.6.js')
+    script.
+      var socket = io();
+  body
+    block content
