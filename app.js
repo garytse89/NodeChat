@@ -32,15 +32,26 @@ if ('development' == app.get('env')) {
 app.get('/', routes.index);
 app.get('/users', user.list);
 
+/*
+notes:
+
+io.emit sends out to everyone including yourself
+socket.broadcast.emit sends to everyone except yourself
+
+*/
 io.on('connection', function(socket) {
 	socket.on('chat message', function(msg){
 		console.log('A user sent: ' + msg);
 		io.emit('chat message', msg);
 	});
-	console.log('User connected');
+
+	// connection - broadcast to others except yourself
+	socket.broadcast.emit('chat message', 'A user has connected');
+
+	// disconnection
 	socket.on('disconnect', function(){
-	console.log('user disconnected');
-  });  
+		io.emit('chat message', 'A user has disconnected');
+	});
 });
 
 http.listen(app.get('port'), function(){
