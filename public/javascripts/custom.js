@@ -18,11 +18,20 @@ $(function(){
 	};
 });
 
-socket.on('chat message', function(msg){
+socket.on('chat message', function(msgObject){
+	var msg = JSON.parse(msgObject);
+	if(clientID == msg.username)
+		$('#messages').append($('<li>').text('Me: ' + msg.message));
+	else
+		$('#messages').append($('<li>').text(msg.username + ': ' + msg.message));
+});
+
+socket.on('notification', function(msg){
 	$('#messages').append($('<li>').text(msg));
 });
 
 socket.on('connect', function(){
+	console.log(socket);
 	socket.emit('connected');
 });
 

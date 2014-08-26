@@ -46,12 +46,14 @@ var usernames = {}; // key: socket-id, value: username
 
 io.on('connection', function(socket) {
 	socket.on('chat message', function(msg){
-		io.emit('chat message', usernames[socket.id] + ': ' + msg);
+		var msgObject = {'username': usernames[socket.id],
+						 'message': msg};
+		io.emit('chat message', JSON.stringify(msgObject));
 	});
 
 	// disconnection
 	socket.on('disconnect', function(){
-		io.emit('chat message', usernames[socket.id] + ' has disconnected');
+		socket.broadcast.emit('notification', usernames[socket.id] + ' has disconnected');
 		delete usernames[socket.id];
 	});
 
@@ -59,7 +61,7 @@ io.on('connection', function(socket) {
 		var newName = chance.first();
 		usernames[socket.id] = newName;
 		socket.emit('assign username', newName);
-		socket.broadcast.emit('chat message', newName + ' has connected');
+		socket.broadcast.emit('notification', newName + ' has connected');
 	});
 });
 
