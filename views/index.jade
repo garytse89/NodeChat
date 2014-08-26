@@ -1,10 +1,13 @@
 extends layout
 
 block content
-  h1= Chat
-  p Welcome to #{title}
-  p#username
-  ul#messages
-  form(id='chatbox')
-    input(type='text', id='chatmessage', autocomplete='off')
-    button(id='send', type='button') Send
+  #sidebar
+    h2 Who's Online
+    ul#onlineUsers
+  #content 
+    p Welcome to #{title}
+    p#username
+    ul#messages
+    form(id='chatbox')
+      input(type='text', id='chatmessage', autocomplete='off')
+      button(id='send', type='button') Send

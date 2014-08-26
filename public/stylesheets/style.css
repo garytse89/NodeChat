@@ -15,3 +15,16 @@ form button { width: 9%; background: rgb(130, 224, 255); border: none; padding: 
 #messages { list-style-type: none; margin: 0; padding: 0; }
 #messages li { padding: 5px 10px; }
 #messages li:nth-child(odd) { background: #eee; }
+
+#content {
+	position: absolute;
+	left:250px;
+}
+
+#sidebar {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 240px;
+}

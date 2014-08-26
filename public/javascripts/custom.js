@@ -35,6 +35,11 @@ socket.on('chat message', function(msgObject){
 	$('#messages').append($('<li>').text(msg.username + ': ' + msg.message));
 });
 
+socket.on('assign username', function(name) {
+	clientID = name;
+	$('#username').text("My username is " + name);
+});
+
 socket.on('notification', function(msg){
 	$('#messages').append($('<li>').text(msg));
 });
@@ -55,3 +60,13 @@ socket.on('stopped typing', function(username){
 	if($(typingID).length > 0)
 		$(typingID).remove();
 });
+
+socket.on('user list update', function(userlist) {
+	// flush
+	$('#onlineUsers').empty();
+	for( user_id in userlist ) {
+		console.log(clientID);
+		if(userlist[user_id] != clientID)
+			$('#onlineUsers').append($('<li>').text(userlist[user_id]));
+	}
+})

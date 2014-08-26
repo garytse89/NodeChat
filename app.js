@@ -53,6 +53,7 @@ io.on('connection', function(socket) {
 
 	// disconnection
 	socket.on('disconnect', function(){
+		socket.broadcast.emit('user list update', usernames);
 		socket.broadcast.emit('notification', usernames[socket.id] + ' has disconnected');
 		delete usernames[socket.id];
 	});
@@ -62,6 +63,7 @@ io.on('connection', function(socket) {
 		usernames[socket.id] = newName;
 		socket.emit('assign username', newName);
 		socket.broadcast.emit('notification', newName + ' has connected');
+		io.emit('user list update', usernames);
 	});
 
 	socket.on('typing', function() {
