@@ -1,12 +1,31 @@
 {
-  "name": "application-name",
-  "version": "0.0.1",
+  "name": "Chat-Server",
+  "version": "0.0.1-5",
   "private": true,
   "scripts": {
     "start": "node app.js"
   },
   "dependencies": {
     "express": "~3.5.1",
-    "jade": "*"
-  }
+    "jade": "*",
+    "mongoose": "*",
+    "socket.io": "*",
+    "chance": "*"
+  },
+  "subdomain": "undefined-chat",
+  "engines": {
+    "node": "0.10.x"
+  },
+  "main": "app.js",
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/garytse89/NodeChat.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/garytse89/NodeChat/issues"
+  },
+  "homepage": "https://github.com/garytse89/NodeChat"
 }
