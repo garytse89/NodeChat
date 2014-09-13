@@ -32,10 +32,21 @@ app.use(express.static(path.join(__dirname, 'public')));
 // mongoose
 mongoose.connect('mongodb://localhost/users');
 var userSchema = new mongoose.Schema({
-  gender: { type: String },
-  country: { type: String}
+	user_id: { type: String },
+	username: { type: String },
+	info: {
+		gender: { type: String },
+  		country: { type: String },
+	},
+	conversations: {}
 });
+
+var chatSchema = new mongoose.Schema({
+	chat_id: { type: String }
+});
+
 var User = mongoose.model('User', userSchema);
+var Chat = mongoose.model('Chat', chatSchema);
 
 // development only
 if ('development' == app.get('env')) {
@@ -48,10 +59,38 @@ app.get('/users', user.list);
 app.post('/login', function(request, response){
     console.log(request.body);
 
-    response.setHeader('Content-Type', 'text/html');
-    response.writeHead(200);
-    response.write('ok');
-    response.end();
+    // validate data
+    if(request.body.gender && request.body.country) {    
+
+	    // store data in mongoDB; assign a username
+	    var newID = uuid.v4()
+	    var newName = chance.first() + chance.integer({min:1,max:1000});
+	    var newUser = new User({
+	    	user_id: newID,
+	    	username: newName,
+	    	info: {
+  				gender : request.body.gender,
+  				country : request.body.country
+  			}
+  		});
+
+  		newUser.save(function(err, user) {
+		  if (err) return console.error('Error', err);
+		  console.dir('Created record for user', user);
+		});
+
+		// write back the username and user_id to be saved on Android app
+		response.setHeader('Content-Type', 'text/html');
+	    response.writeHead(200);
+	    response.write(JSON.stringify( { 'username' : newName,
+										 'user_id' : newID }));
+	    response.end();
+	} else {
+		response.setHeader('Content-Type', 'text/html');
+	    response.writeHead(404);
+	    response.write("Invalid fields");
+	    response.end();
+	}
 });
 
 var sockets = {};
@@ -92,27 +131,62 @@ wss.on('connection', function(ws) {
 	usernames[newID] = newName; // update usernames table
 	
 	ws.send('Welcome to Secret10');	
+	ws.send(JSON.stringify({ 'event': 'assign_id', 'data': newID })); // assign UUID
+
 	console.log('New user connected');
 
 	// notify everyone else that newcomer has joined
 	updateOtherUsers(newID);	
 
 	ws.on('message', function(message) {
-		var senderName = null;
 
-		for( var id in sockets ) {
-			if(sockets[id] == ws) {
-				senderName = usernames[id];
-			}
-		}
+		// message is for updating convo list. check if JSON
+		try {
+			var jsonObj = JSON.parse(message)
+			console.log(jsonObj);
 
-		for( var id in sockets ) {
-			if(sockets[id] != ws) {
-				var obj = { 'event': 'message', 'user': senderName, 'data': message };
-				sockets[id].send( JSON.stringify(obj) );
+			if(jsonObj.event == "forceadd") {
+				console.log("OK GOOD");
+				User.update( { 'user_id' : 'b521dd6b-3cd1-422b-953e-36cbc4cdd656' },
+							 { $push: { 'conversations' : { 'hicres' : 'bing' }} },
+							 { upsert: true },
+							 function(err){
+						        if(err){
+						                console.log(err);
+						        } else{
+						                console.log("Successfully added");
+						        }
+						    });
+			} else if(jsonObj.event == "checkexist") {
+				var found = false;
+				var originID = jsonObj.data.originID;
+				var destinationID = jsonObj.data.destinationID;
+
+				// check whether or not the origin user's conversation array contains the destinationID as a key
+				User.find( { 'user_id' : jsonObj.data.originID },
+							 function (err, docs) {
+							 	chats = docs[0].toObject().conversations;
+
+							 	// O(n) time... :()
+							 	for(var i in chats) {
+									if( chats[i][destinationID] ) {
+										chatID = chats[i][destinationID];
+										found = true;
+										console.log('found');
+									}
+								}
+
+								if(found) {
+									writeChatLog(chatID,ws); // found chat document, write it back
+								} else {
+									createChatLog(originID, destinationID); // create a new chat log in mongoDB
+								}
+						     });					
 			}
+
+		} catch(e) {
+			console.log("Not JSON: ", e);
 		}
-		console.log('Received message = ', message);
 	});	
 
 	ws.on('close', function() {
@@ -137,6 +211,53 @@ function updateOtherUsers(id) {
 function updateNewUser(id) {
 	var obj = { 'event' : 'update_userlist', 'data' : usernames }
 	sockets[id].send(JSON.stringify(obj));
+}
+
+function writeChatLog(chatID, ws) {
+	console.log("Found existing chat log");
+	Chat.find( { 'chat_id' : chatID },
+	          function(err,docs) {
+	          	 chatLog = docs[0].toObject();
+	          	 console.log(chatLog);
+				 // ws.send(...) // update user with the whole chat log; update incrementally later
+	          });
+	// asynchronous! don't write ws.send(...) code here
+}
+
+function createChatLog(originID, destinationID) {
+	// see http://stackoverflow.com/questions/9305987/nodejs-mongoose-which-approach-is-preferable-to-create-a-document
+	console.log("Chat not found, make a new one");
+	var newChatID = uuid.v4()
+	Chat.create( { 'chat_id' : newChatID }, function(err) {
+		console.log("Error on making new chat");
+	});
+
+	// update the convo for both parties
+	var push_for_origin = {};
+	push_for_origin[destinationID] = newChatID;
+	User.update( { 'user_id' : originID },
+			 { $push: { 'conversations' : push_for_origin } },
+			 { upsert: true },
+			 function(err){
+		        if(err){
+		                console.log(err);
+		        } else{
+		                console.log("Successfully added new chat for party 1 - ", originID);
+		        }
+		    });
+
+	var push_for_dest = {};
+	push_for_dest[originID] = newChatID;
+	User.update( { 'user_id' : destinationID },
+			 { $push: { 'conversations' : push_for_dest } },
+			 { upsert: true },
+			 function(err){
+		        if(err){
+		                console.log(err);
+		        } else{
+		                console.log("Successfully added new chat for party 2 - ", destinationID);
+		        }
+		    });
 }
 
 
