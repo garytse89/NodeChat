@@ -132,7 +132,7 @@ wss.on('connection', function(ws) {
 	usernames[newID] = newName; // update usernames table
 	
 	ws.send('Welcome to Secret10');	
-	ws.send(JSON.stringify({ 'event': 'assign_id', 'data': newID })); // assign UUID
+	ws.send(JSON.stringify({ 'event': 'assign_id', 'data': newID, 'username' : newName })); // assign UUID
 
 	console.log('New user connected');
 
@@ -159,30 +159,30 @@ wss.on('connection', function(ws) {
 						        }
 						    });
 			} else if(jsonObj.event == "checkexist") {
-				var found = false;
-				var originID = jsonObj.data.originID;
-				var destinationID = jsonObj.data.destinationID;
+				// var found = false;
+				// var originID = jsonObj.data.originID;
+				// var destinationID = jsonObj.data.destinationID;
 
-				// check whether or not the origin user's conversation array contains the destinationID as a key
-				User.find( { 'user_id' : jsonObj.data.originID },
-							 function (err, docs) {
-							 	chats = docs[0].toObject().conversations;
+				// // check whether or not the origin user's conversation array contains the destinationID as a key
+				// User.find( { 'user_id' : jsonObj.data.originID },
+				// 			 function (err, docs) {
+				// 			 	chats = docs[0].toObject().conversations;
 
-							 	// O(n) time... :()
-							 	for(var i in chats) {
-									if( chats[i][destinationID] ) {
-										chatID = chats[i][destinationID];
-										found = true;
-										console.log('found');
-									}
-								}
+				// 			 	// O(n) time... :()
+				// 			 	for(var i in chats) {
+				// 					if( chats[i][destinationID] ) {
+				// 						chatID = chats[i][destinationID];
+				// 						found = true;
+				// 						console.log('found');
+				// 					}
+				// 				}
 
-								if(found) {
-									writeChatLog(chatID,ws); // found chat document, write it back
-								} else {
-									createChatLog(originID, destinationID); // create a new chat log in mongoDB
-								}
-						     });					
+				// 				if(found) {
+				// 					writeChatLog(chatID,ws); // found chat document, write it back
+				// 				} else {
+				// 					createChatLog(originID, destinationID); // create a new chat log in mongoDB
+				// 				}
+				// 		     });					
 			} else if(jsonObj.event == "message") {
 				// { 'event' : 'message', 'data': { 'from': user_id, 'to': some_users_id, 'message' : 'hello world' } }
 				// update chat document
@@ -227,7 +227,7 @@ function updateNewUser(id) {
 	sockets[id].send(JSON.stringify(obj));
 }
 
-function writeChatLog(chatID, messageObj) {
+function writeChatLog(chatID, destination, messageObj) {
 	console.log("Found existing chat log");
 	Chat.update( { 'chat_id' : chatID },
 	 { $push: { 'messages' : messageObj } },
@@ -238,6 +238,17 @@ function writeChatLog(chatID, messageObj) {
         } else{
         	console.log("pushed new message = ", messageObj.message);
         	// UPDATE USERS HERE
+        	// push downstream
+
+        	Chat.find( { 'chat_id' : chatID }, function(err,docs) {
+        		var chatDoc = docs[0].toObject();
+        		var updateObj = { 'event' : 'chat_message', 'data' : chatDoc };
+
+        		// send to destination
+    			// get socket of destination (what if hes not online??)
+    			var targetSocket = sockets[destination];
+    			targetSocket.send( JSON.stringify(updateObj));
+        	});        	       	
         }
     });
 }
@@ -271,7 +282,7 @@ function createChatLog(originID, destinationID, messageObj) {
 			                console.log(err);
 			        } else{
 			                console.log("Successfully added new chat for party 2 - ", destinationID);
-			                writeChatLog(newChatID, messageObj);
+			                writeChatLog(newChatID, destinationID, messageObj);
 			        }
 			    });
         }
@@ -294,7 +305,7 @@ function checkIfChatExists(origin, destination, messageObj) {
 					}
 
 					if(found) {
-						writeChatLog(chatID,messageObj); // found chat document, write it back
+						writeChatLog(chatID, destination, messageObj); // found chat document, write it back
 					} else {
 						createChatLog(origin, destination, messageObj); // create a new chat log in mongoDB
 					}
