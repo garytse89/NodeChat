@@ -42,7 +42,8 @@ var userSchema = new mongoose.Schema({
 });
 
 var chatSchema = new mongoose.Schema({
-	chat_id: { type: String }
+	chat_id: { type: String },
+	messages: {}
 });
 
 var User = mongoose.model('User', userSchema);
@@ -182,6 +183,19 @@ wss.on('connection', function(ws) {
 									createChatLog(originID, destinationID); // create a new chat log in mongoDB
 								}
 						     });					
+			} else if(jsonObj.event == "message") {
+				// { 'event' : 'message', 'data': { 'from': user_id, 'to': some_users_id, 'message' : 'hello world' } }
+				// update chat document
+				var originID = jsonObj.data.from;
+				var destinationID = jsonObj.data.to;
+				var msg = jsonObj.data.message;
+
+				// update it
+				var messageObj = { 'from' : originID,
+								   'to' : destinationID,
+								   'message' : msg };
+
+				checkIfChatExists(originID, destinationID, messageObj);		
 			}
 
 		} catch(e) {
@@ -213,18 +227,22 @@ function updateNewUser(id) {
 	sockets[id].send(JSON.stringify(obj));
 }
 
-function writeChatLog(chatID, ws) {
+function writeChatLog(chatID, messageObj) {
 	console.log("Found existing chat log");
-	Chat.find( { 'chat_id' : chatID },
-	          function(err,docs) {
-	          	 chatLog = docs[0].toObject();
-	          	 console.log(chatLog);
-				 // ws.send(...) // update user with the whole chat log; update incrementally later
-	          });
-	// asynchronous! don't write ws.send(...) code here
+	Chat.update( { 'chat_id' : chatID },
+	 { $push: { 'messages' : messageObj } },
+	 { upsert: true },
+	 function(err){
+        if(err){
+            console.log(err);
+        } else{
+        	console.log("pushed new message = ", messageObj.message);
+        	// UPDATE USERS HERE
+        }
+    });
 }
 
-function createChatLog(originID, destinationID) {
+function createChatLog(originID, destinationID, messageObj) {
 	// see http://stackoverflow.com/questions/9305987/nodejs-mongoose-which-approach-is-preferable-to-create-a-document
 	console.log("Chat not found, make a new one");
 	var newChatID = uuid.v4()
@@ -236,28 +254,51 @@ function createChatLog(originID, destinationID) {
 	var push_for_origin = {};
 	push_for_origin[destinationID] = newChatID;
 	User.update( { 'user_id' : originID },
-			 { $push: { 'conversations' : push_for_origin } },
-			 { upsert: true },
-			 function(err){
-		        if(err){
-		                console.log(err);
-		        } else{
-		                console.log("Successfully added new chat for party 1 - ", originID);
-		        }
-		    });
+	 { $push: { 'conversations' : push_for_origin } },
+	 { upsert: true },
+	 function(err){
+        if(err){
+                console.log(err);
+        } else{
+                console.log("Successfully added new chat for party 1 - ", originID);
+                var push_for_dest = {};
+				push_for_dest[originID] = newChatID;
+				User.update( { 'user_id' : destinationID },
+				 { $push: { 'conversations' : push_for_dest } },
+				 { upsert: true },
+				 function(err){
+			        if(err){
+			                console.log(err);
+			        } else{
+			                console.log("Successfully added new chat for party 2 - ", destinationID);
+			                writeChatLog(newChatID, messageObj);
+			        }
+			    });
+        }
+    });	
+}
 
-	var push_for_dest = {};
-	push_for_dest[originID] = newChatID;
-	User.update( { 'user_id' : destinationID },
-			 { $push: { 'conversations' : push_for_dest } },
-			 { upsert: true },
-			 function(err){
-		        if(err){
-		                console.log(err);
-		        } else{
-		                console.log("Successfully added new chat for party 2 - ", destinationID);
-		        }
-		    });
+function checkIfChatExists(origin, destination, messageObj) {
+	// check whether or not the origin user's conversation array contains the destinationID as a key
+	User.find( { 'user_id' : origin },
+				 function (err, docs) {
+				 	chats = docs[0].toObject().conversations;
+				 	var found = false;
+				 	// O(n) time... :()
+				 	for(var i in chats) {
+						if( chats[i][destination] ) {
+							chatID = chats[i][destination];
+							found = true;
+							console.log('found');
+						}
+					}
+
+					if(found) {
+						writeChatLog(chatID,messageObj); // found chat document, write it back
+					} else {
+						createChatLog(origin, destination, messageObj); // create a new chat log in mongoDB
+					}
+			     });	
 }
 
 
