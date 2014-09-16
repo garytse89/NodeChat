@@ -3,6 +3,12 @@
  * Module dependencies.
  */
 
+/*
+
+TLDR; messages are sent in checkIfChatExists...() -> writeChatLog()
+
+*/
+
 var express = require('express');
 var app = express();
 var http = require('http').Server(app);
@@ -38,6 +44,7 @@ mongoose.connect('mongodb://localhost/users');
 var userSchema = new mongoose.Schema({
 	user_id: { type: String },
 	username: { type: String },
+	regid: { type: String }, // for GCM
 	info: {
 		gender: { type: String },
   		country: { type: String },
@@ -55,7 +62,7 @@ var Chat = mongoose.model('Chat', chatSchema);
 
 // gcm code
 var sender = new gcm.Sender('AIzaSyDBshmmMIZz30_NhzQ4qpT5MVhtorvnXrI');
-var registrationIds = []; // stores all registered users with the app
+// var registrationIds = {}; // stores all registered users with the app; now stored in db
 
 // development only
 if ('development' == app.get('env')) {
@@ -69,7 +76,7 @@ app.post('/login', function(request, response){
     console.log(request.body);
 
     // validate data
-    if(request.body.gender && request.body.country) {    
+    if(request.body.gender && request.body.country && request.body.regid) {    
 
 	    // store data in mongoDB; assign a username
 	    var newID = uuid.v4()
@@ -77,6 +84,7 @@ app.post('/login', function(request, response){
 	    var newUser = new User({
 	    	user_id: newID,
 	    	username: newName,
+	    	regid: request.body.regid,
 	    	info: {
   				gender : request.body.gender,
   				country : request.body.country
@@ -94,42 +102,6 @@ app.post('/login', function(request, response){
 	    response.write(JSON.stringify( { 'username' : newName,
 										 'user_id' : newID }));
 	    response.end();
-	} else {
-		response.setHeader('Content-Type', 'text/html');
-	    response.writeHead(404);
-	    response.write("Invalid fields");
-	    response.end();
-	}
-});
-
-app.post('/gcm', function(request, response){
-
-    if(request.body.regid) {  
-    	registrationIds.push(request.body.regid);
-    	console.log("Pushed registration ID = ", request.body.regid);  
-		response.setHeader('Content-Type', 'text/html');
-	    response.writeHead(200);
-	    response.write('HELLO GCM');
-	    response.end();
-
-	    // sample message
-	    var message = new gcm.Message({
-		    collapseKey: 'demo',
-		    delayWhileIdle: true,
-		    timeToLive: 3,
-		    data: {
-		        key1: 'message1',
-		        key2: 'message2'
-		    }
-		});
-
-	    sender.send(message, registrationIds, 4, function (err, result) {
-		    if(err) {
-		    	console.log(err);
-		    } else {
-		    	console.log(result);
-		    }
-		});
 	} else {
 		response.setHeader('Content-Type', 'text/html');
 	    response.writeHead(404);
@@ -244,7 +216,7 @@ wss.on('connection', function(ws) {
 								   'to' : destinationID,
 								   'message' : msg };
 
-				checkIfChatExists(originID, destinationID, messageObj);		
+				checkIfChatExistsAndSendMsg(originID, destinationID, messageObj);		
 			} else if(jsonObj.event == "register") {
 				// Android client registering its socket
 				var clientID = jsonObj.data;
@@ -309,6 +281,7 @@ function updateNewUser(id) {
 	sockets[id].send(JSON.stringify(obj));
 }
 
+/* This function does the duty of actually sending the chat message */
 function writeChatLog(chatID, destination, messageObj) {
 	console.log("Found existing chat log");
 	Chat.update( { 'chat_id' : chatID },
@@ -326,10 +299,23 @@ function writeChatLog(chatID, destination, messageObj) {
         		var chatDoc = docs[0].toObject();
         		var updateObj = { 'event' : 'chat_message', 'data' : chatDoc };
 
-        		// send to destination
-    			// get socket of destination (what if hes not online??)
-    			var targetSocket = sockets[destination];
-    			targetSocket.send( JSON.stringify(updateObj));
+        		// check if user is online to send message directly via socket (faster)
+        		var targetSocket = sockets[destination];
+        		targetSocket.send(JSON.stringify(updateObj)); // and we should probably send message only, not the whole doc
+
+        		// slower method if user is not online or app is not in front
+        		// wrap anything you're sending in gcm Message
+			    var message = new gcm.Message({
+				    data: JSON.stringify(updateObj) // should be in same format as socket send for reusability
+				});
+
+			    sender.send(message, messageObj.regid, 4, function (err, result) {
+				    if(err) {
+				    	console.log(err);
+				    } else {
+				    	console.log(result);
+				    }
+				});;
         	});        	       	
         }
     });
@@ -371,7 +357,7 @@ function createChatLog(originID, destinationID, messageObj) {
     });	
 }
 
-function checkIfChatExists(origin, destination, messageObj) {
+function checkIfChatExistsAndSendMsg(origin, destination, messageObj) {
 	// check whether or not the origin user's conversation array contains the destinationID as a key
 	User.find( { 'user_id' : origin },
 				 function (err, docs) {
@@ -385,6 +371,10 @@ function checkIfChatExists(origin, destination, messageObj) {
 							console.log('found');
 						}
 					}
+
+					/* controversial code - attach the registration ID of target user to messageObj 
+					since its convenient to do it here */
+					messageObj.regid = docs[0].toObject().regid
 
 					if(found) {
 						writeChatLog(chatID, destination, messageObj); // found chat document, write it back
