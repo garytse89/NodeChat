@@ -259,7 +259,8 @@ wss.on('connection', function(ws) {
 
 	ws.on('close', function() {
 		for( var id in sockets ) {
-			if(sockets[id] == ws) {				
+			if(sockets[id] == ws) {	
+				console.log('a user has disconnected'); 
 				delete sockets[id];
 				//updateOtherUsers(id);
 			}
@@ -306,10 +307,11 @@ function writeChatLog(chatID, destination, messageObj) {
         		// slower method if user is not online or app is not in front
         		// wrap anything you're sending in gcm Message
 			    var message = new gcm.Message({
-				    data: JSON.stringify(updateObj) // should be in same format as socket send for reusability
+				    data: updateObj // data is object not string
+				    // should be in same format as socket send for reusability
 				});
 
-			    sender.send(message, messageObj.regid, 4, function (err, result) {
+			    sender.send(message, [messageObj.regid], 4, function (err, result) { // second param must be a list
 				    if(err) {
 				    	console.log(err);
 				    } else {
