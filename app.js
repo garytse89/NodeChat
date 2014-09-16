@@ -9,6 +9,7 @@ var http = require('http').Server(app);
 var WebSocketServer = require('ws').Server,
 	wss = new WebSocketServer({port: 8080});	
 var mongoose = require('mongoose');
+var gcm = require('node-gcm');
 
 var routes = require('./routes');
 var user = require('./routes/user');
@@ -16,6 +17,9 @@ var path = require('path');
 
 var chance = require('chance')();
 var uuid = require('node-uuid');
+
+var sockets = {};
+var usernames = {};
 
 // all environments
 app.set('port', process.env.PORT || 3000);
@@ -48,6 +52,10 @@ var chatSchema = new mongoose.Schema({
 
 var User = mongoose.model('User', userSchema);
 var Chat = mongoose.model('Chat', chatSchema);
+
+// gcm code
+var sender = new gcm.Sender('AIzaSyDBshmmMIZz30_NhzQ4qpT5MVhtorvnXrI');
+var registrationIds = []; // stores all registered users with the app
 
 // development only
 if ('development' == app.get('env')) {
@@ -94,8 +102,41 @@ app.post('/login', function(request, response){
 	}
 });
 
-var sockets = {};
-var usernames = {};
+app.post('/gcm', function(request, response){
+
+    if(request.body.regid) {  
+    	registrationIds.push(request.body.regid);
+    	console.log("Pushed registration ID = ", request.body.regid);  
+		response.setHeader('Content-Type', 'text/html');
+	    response.writeHead(200);
+	    response.write('HELLO GCM');
+	    response.end();
+
+	    // sample message
+	    var message = new gcm.Message({
+		    collapseKey: 'demo',
+		    delayWhileIdle: true,
+		    timeToLive: 3,
+		    data: {
+		        key1: 'message1',
+		        key2: 'message2'
+		    }
+		});
+
+	    sender.send(message, registrationIds, 4, function (err, result) {
+		    if(err) {
+		    	console.log(err);
+		    } else {
+		    	console.log(result);
+		    }
+		});
+	} else {
+		response.setHeader('Content-Type', 'text/html');
+	    response.writeHead(404);
+	    response.write("Invalid fields");
+	    response.end();
+	}
+});
 
 function manualAddUsers(name) {
 	usernames[uuid.v4()] = name;
@@ -137,7 +178,15 @@ wss.on('connection', function(ws) {
 	console.log('New user connected');
 
 	// notify everyone else that newcomer has joined
-	updateOtherUsers(newID);	
+	//updateOtherUsers(newID);	
+
+	// testing sending messages to android manually
+	var payload = { "event":"chat_message",
+					"chat_id":"3c7edf52-74ce-4064-bc28-0fbc992b3aee",
+					"messages":[{"message":"sup","to":"b23436ed-b1fb-4008-9669-6b1ad30bfb24","from":"5a5e1e68-1f0e-4200-b873-34ece6ee6a82"}]
+				  }
+	ws.send(JSON.stringify(payload));
+
 
 	ws.on('message', function(message) {
 
@@ -196,10 +245,43 @@ wss.on('connection', function(ws) {
 								   'message' : msg };
 
 				checkIfChatExists(originID, destinationID, messageObj);		
+			} else if(jsonObj.event == "register") {
+				// Android client registering its socket
+				var clientID = jsonObj.data;
+				console.log("Registering Android client socket ", clientID);
+				sockets[clientID] = ws;
+				// usernames[clientID] = jsonObj.username; // client doesnt send its own username upstream
 			}
 
 		} catch(e) {
 			console.log("Not JSON: ", e);
+			if( message == "MANUALREGISTER" ) { // for dwst only (socket terminal)
+				var newID = uuid.v4()
+			    var newName = chance.first() + chance.integer({min:1,max:1000});
+			    var newUser = new User({
+			    	user_id: newID,
+			    	username: newName,
+			    	info: {
+		  				gender : 'Socket',
+		  				country : 'HK'
+		  			}
+		  		});
+
+		  		newUser.save(function(err, user) {
+				  if (err) return console.error('Error', err);
+				  console.dir('Created record for user', user);
+				});
+
+				// add to username list
+				sockets[newID] = ws; // update sockets table
+				// updateNewUser(newID); // no point
+				usernames[newID] = newName; // update usernames table
+				ws.send('Welcome to Secret10');	
+				console.log("Assigned the socket a userID = ", newID);
+				ws.send(JSON.stringify({ 'event': 'assign_id', 'data': newID, 'username' : newName })); // assign UUID
+
+			}
+
 		}
 	});	
 
@@ -207,7 +289,7 @@ wss.on('connection', function(ws) {
 		for( var id in sockets ) {
 			if(sockets[id] == ws) {				
 				delete sockets[id];
-				updateOtherUsers(id);
+				//updateOtherUsers(id);
 			}
 		}		
 	});
