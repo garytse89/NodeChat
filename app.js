@@ -144,33 +144,21 @@ update_userlist
 */
 
 // manually add a few users
-var origin_tester_id = manualAddUsers('Paul');
+var origin_tester_id = manualAddUsers('The guy who will talk to Android');
 // manualAddUsers('Clara');
 // manualAddUsers('Nathan');
 
 wss.on('connection', function(ws) {	
 
 	// add to username list
-	var newName = chance.first() + chance.integer({min:1,max:1000});
-	var newID = uuid.v4()
+	// var newName = chance.first() + chance.integer({min:1,max:1000});
+	// var newID = uuid.v4()
+	// sockets[newID] = ws; // update sockets table
+	// usernames[newID] = newName; // update usernames table	
+	// ws.send('Welcome to Secret10');	
+	// ws.send(JSON.stringify({ 'event': 'assign_id', 'data': newID, 'username' : newName })); // assign UUID
 
-	sockets[newID] = ws; // update sockets table
-
-	// update new user on who else is on the server
-	// do this before you update the usernames list
-	updateNewUser(newID);
-
-	usernames[newID] = newName; // update usernames table
-	
-	ws.send('Welcome to Secret10');	
-	ws.send(JSON.stringify({ 'event': 'assign_id', 'data': newID, 'username' : newName })); // assign UUID
-
-	console.log('New user connected');
-
-	// notify everyone else that newcomer has joined
-	//updateOtherUsers(newID);
-
-	runTests();	
+	// runTests(newID); // send messages from a bot to newID (Android user); disable for android-to-android
 
 	ws.on('message', function(message) {
 
@@ -225,14 +213,17 @@ wss.on('connection', function(ws) {
 				checkIfChatExistsAndSendMsg(originID, destinationID, msg);		
 			} else if(jsonObj.event == "register") {
 				// Android client registering its socket
-				var clientID = jsonObj.data;
-				console.log("Registering Android client socket ", clientID);
+				var clientID = jsonObj.user_id;
+				var username = jsonObj.username;
+				console.log("New Android user, registering socket ", clientID, "name is", username);
 				sockets[clientID] = ws;
-				// usernames[clientID] = jsonObj.username; // client doesnt send its own username upstream
+				usernames[clientID] = username; // client doesnt send its own username upstream
+			    // notify everyone that newcomer has joined
+				updateUserList();
 			}
 
 		} catch(e) {
-			console.log("Not JSON: ", e);
+			console.log("Not JSON: ", e, message);
 			if( message == "MANUALREGISTER" ) { // for dwst only (socket terminal)
 				var newID = uuid.v4()
 			    var newName = chance.first() + chance.integer({min:1,max:1000});
@@ -252,7 +243,6 @@ wss.on('connection', function(ws) {
 
 				// add to username list
 				sockets[newID] = ws; // update sockets table
-				// updateNewUser(newID); // no point
 				usernames[newID] = newName; // update usernames table
 				ws.send('Welcome to Secret10');	
 				console.log("Assigned the socket a userID = ", newID);
@@ -274,18 +264,12 @@ wss.on('connection', function(ws) {
 	});
 });
 
-function updateOtherUsers(id) {
-	// update all users except the id passed in
+function updateUserList() {
+	// update all users (client side will handle not to display itself as a contact)
 	var obj = { 'event' : 'update_userlist', 'data' : usernames }
 	for( var s_id in sockets ) {
-		if(s_id != id)
-			sockets[s_id].send( JSON.stringify(obj) );
+		sockets[s_id].send( JSON.stringify(obj) );
 	}
-}
-
-function updateNewUser(id) {
-	var obj = { 'event' : 'update_userlist', 'data' : usernames }
-	sockets[id].send(JSON.stringify(obj));
 }
 
 /* This function does the duty of actually sending the chat message */
@@ -311,23 +295,27 @@ function writeChatLog(chatID, origin, destination, message, target_regid) {
         		var updateObj = { 'event' : 'chat_message', 'data' : chatDoc };
 
         		// check if user is online to send message directly via socket (faster)
-        		var targetSocket = sockets[destination];
-        		targetSocket.send(JSON.stringify(updateObj)); // and we should probably send message only, not the whole doc
+        		try {
+        			var targetSocket = sockets[destination];
+        			targetSocket.send(JSON.stringify(updateObj)); // and we should probably send message only, not the whole doc
+        		} catch(e) {
+        			console.log("Target user is not online, send GCM instead");
 
-        		// slower method if user is not online or app is not in front
-        		// wrap anything you're sending in gcm Message
-			    var message = new gcm.Message({
-				    data: updateObj // data is object not string
-				    // should be in same format as socket send for reusability
-				});
+        			// slower method if user is not online or app is not in front
+	        		// wrap anything you're sending in gcm Message
+				    var message = new gcm.Message({
+					    data: updateObj // data is object not string
+					    // should be in same format as socket send for reusability
+					});
 
-			    sender.send(message, [target_regid], 4, function (err, result) { // second param must be a list
-				    if(err) {
-				    	console.log(err);
-				    } else {
-				    	console.log(result);
-				    }
-				});;
+				    sender.send(message, [target_regid], 4, function (err, result) { // second param must be a list
+					    if(err) {
+					    	console.log(err);
+					    } else {
+					    	console.log(result);
+					    }
+					});
+        		}        		
         	});        	       	
         }
     });
@@ -397,7 +385,7 @@ function checkIfChatExistsAndSendMsg(origin, destination, message) {
 function getDateTime() {
 
     var date = new Date();
-    
+
     var hour = date.getHours();
     hour = (hour < 10 ? "0" : "") + hour;
 
@@ -419,17 +407,17 @@ function getDateTime() {
 
 }
 
-/* all code that is sent to incoming client initially should be put here 
+/* all code that is sent to incoming client (targetID) initially should be put here 
 Example: you just sign in with Android, and you want to test if you can receive messages
 without having to copy and paste chat message delivery JSON strings into websocket terminal
 */
-function runTests() {
+function runTests(targetID) {
 	// use organic function to test sending messages to android upon signin
-	checkIfChatExistsAndSendMsg(origin_tester_id, newID, 'hello');
+	checkIfChatExistsAndSendMsg(origin_tester_id, targetID, 'hello');
 	// these tests show a bug where if you send three messages quickly in a row, then 
 	// three different chat docs will get made (because the first doesnt run fast enough asycnhronusly)
-	checkIfChatExistsAndSendMsg(origin_tester_id, newID, 'this is a test');
-	checkIfChatExistsAndSendMsg(origin_tester_id, newID, '1-2-3 microphone');
+	checkIfChatExistsAndSendMsg(origin_tester_id, targetID, 'this is a test');
+	checkIfChatExistsAndSendMsg(origin_tester_id, targetID, '1-2-3 microphone');
 }
 
 
