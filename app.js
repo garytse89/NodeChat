@@ -111,7 +111,25 @@ app.post('/login', function(request, response){
 });
 
 function manualAddUsers(name) {
-	usernames[uuid.v4()] = name;
+	var new_id = uuid.v4();
+	usernames[new_id] = name;
+	console.log('Added new user ', name, ' with id = ', new_id);
+
+	var newUser = new User({
+	    	user_id: new_id,
+	    	username: name,
+	    	info: {
+  				gender : 'Socket',
+  				country : 'HK'
+  			}
+  		});
+
+	newUser.save(function(err, user) {
+	  if (err) return console.error('Error', err);
+	  console.dir('Created record for user', user);
+	});
+
+	return new_id;
 }
 
 // WebSocket
@@ -126,9 +144,9 @@ update_userlist
 */
 
 // manually add a few users
-manualAddUsers('Paul');
-manualAddUsers('Clara');
-manualAddUsers('Nathan');
+var origin_tester_id = manualAddUsers('Paul');
+// manualAddUsers('Clara');
+// manualAddUsers('Nathan');
 
 wss.on('connection', function(ws) {	
 
@@ -150,15 +168,9 @@ wss.on('connection', function(ws) {
 	console.log('New user connected');
 
 	// notify everyone else that newcomer has joined
-	//updateOtherUsers(newID);	
+	//updateOtherUsers(newID);
 
-	// testing sending messages to android manually
-	var payload = { "event":"chat_message",
-					"chat_id":"3c7edf52-74ce-4064-bc28-0fbc992b3aee",
-					"messages":[{"message":"sup","to":"b23436ed-b1fb-4008-9669-6b1ad30bfb24","from":"5a5e1e68-1f0e-4200-b873-34ece6ee6a82"}]
-				  }
-	ws.send(JSON.stringify(payload));
-
+	runTests();	
 
 	ws.on('message', function(message) {
 
@@ -210,13 +222,7 @@ wss.on('connection', function(ws) {
 				var originID = jsonObj.data.from;
 				var destinationID = jsonObj.data.to;
 				var msg = jsonObj.data.message;
-
-				// update it
-				var messageObj = { 'from' : originID,
-								   'to' : destinationID,
-								   'message' : msg };
-
-				checkIfChatExistsAndSendMsg(originID, destinationID, messageObj);		
+				checkIfChatExistsAndSendMsg(originID, destinationID, msg);		
 			} else if(jsonObj.event == "register") {
 				// Android client registering its socket
 				var clientID = jsonObj.data;
@@ -283,21 +289,25 @@ function updateNewUser(id) {
 }
 
 /* This function does the duty of actually sending the chat message */
-function writeChatLog(chatID, destination, messageObj) {
+function writeChatLog(chatID, origin, destination, message, target_regid) {
 	console.log("Found existing chat log");
 	Chat.update( { 'chat_id' : chatID },
-	 { $push: { 'messages' : messageObj } },
+	 { $push: { 'messages' : { 'message' : message, 'timestamp' : getDateTime() } } },
 	 { upsert: true },
 	 function(err){
         if(err){
             console.log(err);
         } else{
-        	console.log("pushed new message = ", messageObj.message);
+        	console.log("pushed new message = ", message);
         	// UPDATE USERS HERE
         	// push downstream
 
         	Chat.find( { 'chat_id' : chatID }, function(err,docs) {
         		var chatDoc = docs[0].toObject();
+
+        		// add extra parameter to chatDoc that we don't store server side
+        		chatDoc.origin = origin;
+
         		var updateObj = { 'event' : 'chat_message', 'data' : chatDoc };
 
         		// check if user is online to send message directly via socket (faster)
@@ -311,7 +321,7 @@ function writeChatLog(chatID, destination, messageObj) {
 				    // should be in same format as socket send for reusability
 				});
 
-			    sender.send(message, [messageObj.regid], 4, function (err, result) { // second param must be a list
+			    sender.send(message, [target_regid], 4, function (err, result) { // second param must be a list
 				    if(err) {
 				    	console.log(err);
 				    } else {
@@ -323,7 +333,7 @@ function writeChatLog(chatID, destination, messageObj) {
     });
 }
 
-function createChatLog(originID, destinationID, messageObj) {
+function createChatLog(originID, destinationID, message, target_regid) {
 	// see http://stackoverflow.com/questions/9305987/nodejs-mongoose-which-approach-is-preferable-to-create-a-document
 	console.log("Chat not found, make a new one");
 	var newChatID = uuid.v4()
@@ -352,14 +362,14 @@ function createChatLog(originID, destinationID, messageObj) {
 			                console.log(err);
 			        } else{
 			                console.log("Successfully added new chat for party 2 - ", destinationID);
-			                writeChatLog(newChatID, destinationID, messageObj);
+			                writeChatLog(newChatID, originID, destinationID, message, target_regid);
 			        }
 			    });
         }
     });	
 }
 
-function checkIfChatExistsAndSendMsg(origin, destination, messageObj) {
+function checkIfChatExistsAndSendMsg(origin, destination, message) {
 	// check whether or not the origin user's conversation array contains the destinationID as a key
 	User.find( { 'user_id' : origin },
 				 function (err, docs) {
@@ -374,16 +384,52 @@ function checkIfChatExistsAndSendMsg(origin, destination, messageObj) {
 						}
 					}
 
-					/* controversial code - attach the registration ID of target user to messageObj 
-					since its convenient to do it here */
-					messageObj.regid = docs[0].toObject().regid
+					var target_regid = docs[0].toObject().regid; // needed to send notification using GCM to target device
 
 					if(found) {
-						writeChatLog(chatID, destination, messageObj); // found chat document, write it back
+						writeChatLog(chatID, origin, destination, message, target_regid); // found chat document, write it back
 					} else {
-						createChatLog(origin, destination, messageObj); // create a new chat log in mongoDB
+						createChatLog(origin, destination, message, target_regid); // create a new chat log in mongoDB
 					}
 			     });	
+}
+
+function getDateTime() {
+
+    var date = new Date();
+    
+    var hour = date.getHours();
+    hour = (hour < 10 ? "0" : "") + hour;
+
+    var min  = date.getMinutes();
+    min = (min < 10 ? "0" : "") + min;
+
+    var sec  = date.getSeconds();
+    sec = (sec < 10 ? "0" : "") + sec;
+
+    var year = date.getFullYear();
+
+    var month = date.getMonth() + 1;
+    month = (month < 10 ? "0" : "") + month;
+
+    var day  = date.getDate();
+    day = (day < 10 ? "0" : "") + day;
+
+    return year + ":" + month + ":" + day + ":" + hour + ":" + min + ":" + sec;
+
+}
+
+/* all code that is sent to incoming client initially should be put here 
+Example: you just sign in with Android, and you want to test if you can receive messages
+without having to copy and paste chat message delivery JSON strings into websocket terminal
+*/
+function runTests() {
+	// use organic function to test sending messages to android upon signin
+	checkIfChatExistsAndSendMsg(origin_tester_id, newID, 'hello');
+	// these tests show a bug where if you send three messages quickly in a row, then 
+	// three different chat docs will get made (because the first doesnt run fast enough asycnhronusly)
+	checkIfChatExistsAndSendMsg(origin_tester_id, newID, 'this is a test');
+	checkIfChatExistsAndSendMsg(origin_tester_id, newID, '1-2-3 microphone');
 }
 
 
