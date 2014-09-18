@@ -276,7 +276,13 @@ function updateUserList() {
 function writeChatLog(chatID, origin, destination, message, target_regid) {
 	console.log("Found existing chat log");
 	Chat.update( { 'chat_id' : chatID },
-	 { $push: { 'messages' : { 'message' : message, 'timestamp' : getDateTime() } } },
+	 { $push: { 'messages' : { 'origin': origin, // we need these for client to identify who sent the message
+	 						   'destination': destination, 
+	 						   'message' : message, 
+	 						   'timestamp' : getDateTime() 
+	 						 } 
+	 		  } 
+	 },
 	 { upsert: true },
 	 function(err){
         if(err){
